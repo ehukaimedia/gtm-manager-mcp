@@ -40,6 +40,17 @@ A Model Context Protocol (MCP) server that provides comprehensive Google Tag Man
 - OAuth 2.0 Client ID and Secret
 - Access to target GTM containers
 
+### Required OAuth Scopes
+
+For full functionality (CRUD + submit/publish), your OAuth token must include all of:
+
+- https://www.googleapis.com/auth/tagmanager.readonly
+- https://www.googleapis.com/auth/tagmanager.edit.containers
+- https://www.googleapis.com/auth/tagmanager.edit.containerversions
+- https://www.googleapis.com/auth/tagmanager.publish
+
+If scopes change, re-consent: run `npm run auth:url`, open the URL, approve, then `npm run auth:exchange -- <code>`.
+
 ## Installation
 
 ```bash
@@ -120,6 +131,10 @@ GTM_ID=GTM-XXXXXXX
    npm run cli -- auth:exchange "<paste-code>"
    # Tokens saved to data/gtm-token.json
    ```
+
+If you see "insufficient authentication scopes" on create/publish:
+- Ensure the token includes `tagmanager.edit.containerversions` and `tagmanager.publish` (re-auth if needed).
+- Confirm the GTM user has Container permissions: Edit, Approve, Publish (or Admin).
 
 ## Using as a Global MCP Tool
 

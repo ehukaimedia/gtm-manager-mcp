@@ -1,6 +1,6 @@
 {
   "name": "gtm-manager-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Model Context Protocol (MCP) server for managing Google Tag Manager.",
   "type": "module",
   "main": "dist/index.js",
@@ -15,12 +15,18 @@
     "build": "tsc -p tsconfig.json",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
-    "test": "echo \"(no tests)\"",
+    "test": "npm run build && node tests/run-tests.mjs",
     "serve:callback": "node dist/callbackBin.js",
     "cli": "node dist/cli.js",
     "auth:url": "node dist/cli.js auth:url",
     "auth:exchange": "node dist/cli.js auth:exchange",
-    "test:gtm:crud": "npm run build && node dist/test-gtm-crud.js"
+    "test:gtm:crud": "npm run build && node dist/test-gtm-crud.js",
+    "test:gtm:submit": "npm run build && node dist/test-gtm-submit.js",
+    "test:gtm:publish": "npm run build && node dist/test-gtm-publish.js",
+    "list": "npm run build && node dist/list.js",
+    "version:create": "node dist/cli.js version:create",
+    "version:publish": "node dist/cli.js version:publish",
+    "submit": "node dist/cli.js submit"
   },
   "files": [
     "dist",

@@ -14,8 +14,10 @@ import { fileURLToPath } from 'url';
 
 // GTM API Configuration
 const GTM_SCOPES = [
-  'https://www.googleapis.com/auth/tagmanager.edit.containers',
   'https://www.googleapis.com/auth/tagmanager.readonly',
+  'https://www.googleapis.com/auth/tagmanager.edit.containers',
+  'https://www.googleapis.com/auth/tagmanager.edit.containerversions',
+  'https://www.googleapis.com/auth/tagmanager.publish',
 ];
 
 function loadDotEnv() {
@@ -41,7 +43,7 @@ function loadDotEnv() {
   } catch {}
 }
 
-class GTMManager {
+export class GTMManager {
   private auth?: OAuth2Client;
   private tagManager: any;
   private tokenPath: string;
@@ -509,6 +511,54 @@ class GTMManager {
     return { deleted: true, triggerId };
   }
 
+  async createVersion(name?: string, notes?: string) {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const workspaces = await this.tagManager.accounts.containers.workspaces.list({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}`
+    });
+    const workspace = workspaces.data.workspace?.[0];
+    if (!workspace) throw new Error('No workspace found');
+
+    const resp = await this.tagManager.accounts.containers.workspaces.create_version({
+      path: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+      requestBody: {
+        name,
+        notes,
+      },
+    });
+
+    const version = (resp as any).data?.containerVersion || (resp as any).data;
+    const versionId = version?.containerVersionId;
+    return { versionId, version };
+  }
+
+  async publishVersion(versionId: string) {
+    if (!versionId) throw new Error('versionId is required');
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const resp = await this.tagManager.accounts.containers.versions.publish({
+      path: `accounts/${this.accountId}/containers/${this.containerId}/versions/${versionId}`,
+    });
+    return resp.data;
+  }
+
+  async submit(name?: string, notes?: string) {
+    const { versionId, version } = await this.createVersion(name, notes);
+    if (!versionId) throw new Error('Failed to create version');
+    const published = await this.publishVersion(versionId);
+    return { versionId, version, published };
+  }
 }
 
 // Create MCP Server
@@ -749,6 +799,39 @@ const TOOLS: Tool[] = [
       required: ['triggerId'],
     },
   },
+  {
+    name: 'gtm_create_version',
+    description: 'Create a container version from the active workspace',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Version name (optional)' },
+        notes: { type: 'string', description: 'Version notes (optional)' },
+      },
+    },
+  },
+  {
+    name: 'gtm_publish_version',
+    description: 'Publish a specific container version',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        versionId: { type: 'string', description: 'Container version ID' },
+      },
+      required: ['versionId'],
+    },
+  },
+  {
+    name: 'gtm_submit',
+    description: 'Create a version from the workspace and publish it',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Version name (optional)' },
+        notes: { type: 'string', description: 'Version notes (optional)' },
+      },
+    },
+  },
 ];
 
 // Handle tool listing
@@ -963,6 +1046,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
 
+      case 'gtm_create_version': {
+        const res = await gtmManager.createVersion(args?.name as string | undefined, args?.notes as string | undefined);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Version created successfully!\nVersion ID: ${res.versionId || 'unknown'}`,
+            },
+          ],
+        };
+      }
+
+      case 'gtm_publish_version': {
+        if (!args?.versionId) throw new Error('versionId is required');
+        await gtmManager.publishVersion(args.versionId as string);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Version ${args.versionId} published successfully!`,
+            },
+          ],
+        };
+      }
+
+      case 'gtm_submit': {
+        const res = await gtmManager.submit(args?.name as string | undefined, args?.notes as string | undefined);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Submit successful!\nVersion ID: ${res.versionId}`,
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -986,4 +1106,6 @@ async function main() {
   console.error('GTM Manager MCP Server running...');
 }
 
-main().catch(console.error);
+if (process.env.MCP_NO_MAIN !== '1') {
+  main().catch(console.error);
+}
