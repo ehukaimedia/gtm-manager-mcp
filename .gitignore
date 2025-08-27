@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+.context/
+.playwright/
+.vscode/
+package-lock.json
+data/gtm-token.json
+

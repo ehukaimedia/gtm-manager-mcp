@@ -1,0 +1,48 @@
+{
+  "name": "gtm-manager-mcp",
+  "version": "0.1.1",
+  "description": "Model Context Protocol (MCP) server for managing Google Tag Manager.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "gtm-mcp": "dist/bin.js",
+    "gtm-mcp-callback": "dist/callbackBin.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --loader ts-node/esm src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo \"(no tests)\"",
+    "serve:callback": "node dist/callbackBin.js",
+    "cli": "node dist/cli.js",
+    "auth:url": "node dist/cli.js auth:url",
+    "auth:exchange": "node dist/cli.js auth:exchange",
+    "test:gtm:crud": "npm run build && node dist/test-gtm-crud.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "AGENTS.md",
+    ".env.example"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-tag-manager",
+    "gtm",
+    "cli",
+    "codex"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "google-auth-library": "^10.3.0",
+    "googleapis": "^158.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2"
+  }
+}
