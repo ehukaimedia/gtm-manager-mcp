@@ -61,7 +61,7 @@ npm run build
 # Global install from local checkout
 npm i -g .
 
-# Or once published
+# Or once published (package name)
 # npm i -g gtm-manager-mcp
 ```
 
@@ -118,7 +118,7 @@ GTM_ID=GTM-XXXXXXX
 2. Get the OAuth URL and authenticate:
    ```bash
    # If installed globally
-   gtm-manager-auth auth:url
+   gtm-mcp-auth auth:url
    # Or from source
    npm run cli -- auth:url
    # Open the printed URL, sign in, it redirects to http://localhost:3101/callback
@@ -126,7 +126,7 @@ GTM_ID=GTM-XXXXXXX
 3. Exchange the authorization code for tokens (copy the `code` from the callback page):
    ```bash
    # If installed globally
-   gtm-manager-auth auth:exchange "<paste-code>"
+   gtm-mcp-auth auth:exchange "<paste-code>"
    # Or from source
    npm run cli -- auth:exchange "<paste-code>"
    # Tokens saved to data/gtm-token.json
@@ -136,21 +136,32 @@ If you see "insufficient authentication scopes" on create/publish:
 - Ensure the token includes `tagmanager.edit.containerversions` and `tagmanager.publish` (re-auth if needed).
 - Confirm the GTM user has Container permissions: Edit, Approve, Publish (or Admin).
 
-## Using as a Global MCP Tool
+## Using Globally
 
-- After `npm i -g gtm-manager-mcp` (or `npm i -g .` locally), the binary `gtm-manager-mcp` is available on your PATH.
-- Configure your MCP-compatible client to launch `gtm-manager-mcp` with env vars `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and optional `GTM_ID`.
-- For local OAuth, run `gtm-manager-callback` to serve `http://localhost:3101/callback`.
+- Install globally: `npm i -g .` (or `npm i -g gtm-manager-mcp` once published)
+- Binaries available:
+  - `gtm-mcp` (MCP server over stdio)
+  - `gtm-mcp-callback` (local OAuth callback at `http://localhost:3101/callback`)
+  - `gtm-mcp-auth` (auth:url, auth:exchange, version:create, version:publish, submit)
+- Optional for active development: `npm link` instead of global install (remember to `npm run build` to refresh `dist/`).
+
+Configure your MCP client to launch `gtm-mcp` with the project’s env vars.
 
 ### Codex CLI config example
 
 ```toml
 [mcp_servers.gtm_manager]
 command = "bash"
-args = ["-lc", "set -a; [ -f .env ] && source .env; exec gtm-manager-mcp"]
+args = ["-lc", "set -a; [ -f .env ] && source .env; exec gtm-mcp"]
 ```
 
-Optional per-project token directory (keeps tokens within each project): set `GTM_TOKEN_DIR=.gtm` in that project’s `.env`.
+Per-project tokens: set `GTM_TOKEN_DIR=.gtm` in each project’s `.env` to keep tokens isolated per project.
+
+Quick global auth flow per project:
+
+1. `gtm-mcp-callback` (keeps callback server running)
+2. `gtm-mcp-auth auth:url` → open URL and approve
+3. `gtm-mcp-auth auth:exchange "<code>"`
 
 ## API Reference
 

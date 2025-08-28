@@ -61,7 +61,7 @@ const server = createServer((req: any, res: any) => {
   <div class="container">
     <h2>GTM OAuth Callback</h2>
     ${error ? `<p class="error">❌ Authentication Error: ${error}</p><p>Please retry the authentication process.</p>` : ''}
-    ${code ? `<p class="success">✅ Authentication Successful!</p><p>Authorization code received:</p><div class="code">${code}</div><div class="instructions"><p><strong>Next steps:</strong></p><ol><li>Copy the authorization code above</li><li>In your terminal, exchange the code:<br /><code>gtm-manager-auth auth:exchange \"${code}\"</code></li><li>You can close this window after copying the code</li></ol></div><p><small>Code expires in ~10 minutes</small></p>` : (!error ? `<p class="error">❌ No authorization code received</p><p>Please ensure you're following the correct authentication flow.</p>` : '')}
+    ${code ? `<p class="success">✅ Authentication Successful!</p><p>Authorization code received:</p><div class="code">${code}</div><div class="instructions"><p><strong>Next steps:</strong></p><ol><li>Copy the authorization code above</li><li>In your terminal, exchange the code:<br /><code>gtm-mcp-auth auth:exchange \"${code}\"</code></li><li>You can close this window after copying the code</li></ol></div><p><small>Code expires in ~10 minutes</small></p>` : (!error ? `<p class="error">❌ No authorization code received</p><p>Please ensure you're following the correct authentication flow.</p>` : '')}
   </div>
 </body>
 </html>`;
@@ -75,6 +75,6 @@ const server = createServer((req: any, res: any) => {
   res.end('Not found');
 });
 
-server.listen(PORT, () => {
-  console.log(`Local OAuth callback server running on http://localhost:${PORT}/callback`);
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`Local OAuth callback server running on http://127.0.0.1:${PORT}/callback`);
 });

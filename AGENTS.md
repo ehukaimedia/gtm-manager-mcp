@@ -12,8 +12,8 @@
 - `npm run dev`: Run server in watch/dev mode.
 - `npm test`: Execute test suite.
 - `npm run serve:callback`: Start local OAuth callback at `http://localhost:3101/callback`.
-- `npm run cli -- auth:url`: Print OAuth URL.
-- `npm run auth:exchange -- <code>`: Exchange code and persist tokens.
+- `gtm-mcp-auth auth:url` or `npm run cli -- auth:url`: Print OAuth URL.
+- `gtm-mcp-auth auth:exchange <code>` or `npm run auth:exchange -- <code>`: Exchange code and persist tokens.
 
 ## Coding Style & Naming Conventions
 - TypeScript; 2-space indentation; single quotes; end with semicolons.
@@ -35,4 +35,3 @@
 - Never commit secrets. Use a local `.env` (copy from `.env.example`).
 - Required env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`; optional: `GTM_ID`.
 - Tokens persist to `data/gtm-token.json` and are not committed.
-

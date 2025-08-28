@@ -113,7 +113,16 @@ export class GTMManager {
   }
 
   private saveToken(token: any) {
-    fs.writeFileSync(this.tokenPath, JSON.stringify(token, null, 2));
+    try {
+      const dir = path.dirname(this.tokenPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      }
+      fs.writeFileSync(this.tokenPath, JSON.stringify(token, null, 2), { mode: 0o600 });
+    } catch (e) {
+      // Fallback if filesystem does not support POSIX perms
+      fs.writeFileSync(this.tokenPath, JSON.stringify(token, null, 2));
+    }
   }
 
   async authenticate(code: string) {

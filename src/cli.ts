@@ -42,6 +42,18 @@ function requireEnv(keys: string[]) {
   }
 }
 
+function ensureDirSecure(dir: string) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+}
+
+function writeFileSecure(p: string, data: string) {
+  try {
+    fs.writeFileSync(p, data, { mode: 0o600 });
+  } catch {
+    fs.writeFileSync(p, data);
+  }
+}
+
 async function cmdAuthUrl() {
   requireEnv(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI']);
   const oauth2 = new google.auth.OAuth2(
@@ -66,12 +78,13 @@ async function cmdAuthExchange(code?: string) {
   );
   const authCode = code as string;
   const { tokens } = await oauth2.getToken(authCode);
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+  ensureDirSecure(DATA_DIR);
+  writeFileSecure(TOKEN_PATH, JSON.stringify(tokens, null, 2));
   console.log(`Saved tokens to ${TOKEN_PATH}`);
 }
 
 async function withAuth() {
+  requireEnv(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI']);
   const oauth2 = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
