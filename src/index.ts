@@ -351,9 +351,9 @@ export class GTMManager {
 
   async createGa4EventTag(
     name: string,
-    measurementId: string,
+    measurementId: string | undefined,
     eventName: string,
-    options?: { eventParameters?: Record<string, string | number | boolean>; triggerType?: string }
+    options?: { configTagId?: string; eventParameters?: Record<string, string | number | boolean>; triggerType?: string; triggerId?: string }
   ) {
     if (!this.accountId || !this.containerId) {
       if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
@@ -368,9 +368,9 @@ export class GTMManager {
     const workspace = workspaces.data.workspace?.[0];
     if (!workspace) throw new Error('No workspace found');
 
-    let triggerId: string | undefined;
+    let triggerId: string | undefined = options?.triggerId;
     const triggerType = options?.triggerType || 'pageview';
-    if (triggerType === 'pageview') {
+    if (!triggerId && triggerType === 'pageview') {
       const triggers = await this.tagManager.accounts.containers.workspaces.triggers.list({
         parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
       });
@@ -387,15 +387,20 @@ export class GTMManager {
     }
 
     const params: any[] = [
-      { type: 'template', key: 'measurementId', value: measurementId },
       { type: 'template', key: 'eventName', value: eventName },
     ];
-    // For Google tag-based containers, provide override as a list of IDs
-    params.push({
-      type: 'list',
-      key: 'measurementIdOverride',
-      list: [ { type: 'template', value: measurementId } ],
-    });
+    if (options?.configTagId) {
+      params.push({ type: 'tagReference', key: 'tagReference', value: options.configTagId });
+    } else if (measurementId) {
+      params.push({ type: 'template', key: 'measurementId', value: measurementId });
+      params.push({
+        type: 'list',
+        key: 'measurementIdOverride',
+        list: [ { type: 'template', value: measurementId } ],
+      });
+    } else {
+      throw new Error('Either configTagId or measurementId is required');
+    }
     if (options?.eventParameters && Object.keys(options.eventParameters).length > 0) {
       params.push({
         type: 'list',
@@ -829,12 +834,14 @@ const TOOLS: Tool[] = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Tag name' },
-        measurementId: { type: 'string', description: 'GA4 Measurement ID (e.g., G-XXXXXXX)' },
+        measurementId: { type: 'string', description: 'GA4 Measurement ID (e.g., G-XXXXXXX) — optional if configTagId is provided' },
+        configTagId: { type: 'string', description: 'GA4 Configuration tag ID to link (preferred for Google tag containers)' },
         eventName: { type: 'string', description: 'GA4 event name (e.g., page_view, purchase)' },
         eventParameters: { type: 'object', description: 'Event parameters (key -> value)' },
         trigger: { type: 'string', description: 'Trigger type (default: pageview)', default: 'pageview' },
+        triggerId: { type: 'string', description: 'Explicit Trigger ID to use' },
       },
-      required: ['name', 'measurementId', 'eventName'],
+      required: ['name', 'eventName'],
     },
   },
   {
@@ -1142,16 +1149,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'gtm_create_ga4_event': {
-        if (!args?.name || !args?.measurementId || !args?.eventName) throw new Error('name, measurementId, and eventName are required');
+        if (!args?.name || !args?.eventName) throw new Error('name and eventName are required');
+        if (!args?.measurementId && !args?.configTagId) throw new Error('Provide either measurementId or configTagId');
         const created = await gtmManager.createGa4EventTag(
           args.name as string,
-          args.measurementId as string,
+          (args.measurementId as string | undefined),
           args.eventName as string,
           {
             eventParameters: (args.eventParameters as Record<string, string | number | boolean>) || undefined,
             triggerType: (args.trigger as string) || 'pageview',
             // Allow passing a specific trigger ID (e.g., Custom Event/Regex)
             ...(args.triggerId ? { triggerId: args.triggerId as string } : {}),
+            ...(args.configTagId ? { configTagId: args.configTagId as string } : {}),
           }
         );
         return {

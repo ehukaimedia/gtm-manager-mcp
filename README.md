@@ -303,7 +303,8 @@ Create a native GA4 Event tag.
 
 **Parameters:**
 - `name` (string, required): Tag name
-- `measurementId` (string, required): GA4 Measurement ID (e.g., `G-XXXXXXX`)
+- `measurementId` (string, optional): GA4 Measurement ID (e.g., `G-XXXXXXX`). Optional when `configTagId` is provided.
+- `configTagId` (string, optional): ID of a GA4 Configuration tag to link. Prefer this for Google tag containers.
 - `eventName` (string, required): Event name (e.g., `login`, `purchase`)
 - `eventParameters` (object, optional): Event params (key -> value)
 - `trigger` (string, optional): Trigger type (default: `pageview`)
@@ -313,13 +314,15 @@ Create a native GA4 Event tag.
 ```typescript
 await gtm_create_ga4_event({
   name: 'GA4 Event Login',
-  measurementId: 'G-TEST123',
+  configTagId: '44',
   eventName: 'login',
   eventParameters: { method: 'email' },
-  trigger: 'pageview',
-  // or: triggerId: '43'
+  triggerId: '43'
 })
 ```
+
+Notes:
+- When `configTagId` is provided, the event references your GA4 Configuration tag (recommended). If omitted, the tool sets `measurementId` and a compatible `measurementIdOverride` list.
 
 #### `gtm_update_tag`
 Update an existing tag.
