@@ -334,7 +334,8 @@ await gtm_create_ga4_event({
 ```
 
 Notes:
-- When `configTagId` is provided, the event references your GA4 Configuration tag (recommended). If omitted, the tool sets `measurementId` and a compatible `measurementIdOverride` list.
+- When `configTagId` is provided, the event references your GA4 Configuration tag (recommended). It maps to the vendor key `sendToTag` and does not set `measurementIdOverride`.
+- If you pass `trigger: "43"` without `triggerId`, the tool will treat it as an ID automatically.
 
 #### `gtm_update_tag`
 Update an existing tag.

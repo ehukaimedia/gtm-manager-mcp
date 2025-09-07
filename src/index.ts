@@ -414,7 +414,8 @@ export class GTMManager {
       { type: 'template', key: 'eventName', value: eventName },
     ];
     if (options?.configTagId) {
-      params.push({ type: 'tagReference', key: 'tagReference', value: options.configTagId });
+      // Link event to an existing GA4 Configuration tag. Vendor key is sendToTag.
+      params.push({ type: 'tagReference', key: 'sendToTag', value: options.configTagId });
     } else if (measurementId) {
       params.push({ type: 'template', key: 'measurementId', value: measurementId });
       params.push({
@@ -1237,15 +1238,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'gtm_create_ga4_event': {
         if (!args?.name || !args?.eventName) throw new Error('name and eventName are required');
         if (!args?.measurementId && !args?.configTagId) throw new Error('Provide either measurementId or configTagId');
+        // Allow using `trigger` as either a type (e.g., 'pageview') or a numeric ID
+        let triggerTypeOrId = (args.trigger as string) || 'pageview';
+        let triggerId: string | undefined = args.triggerId as string | undefined;
+        if (!triggerId && triggerTypeOrId && /^\d+$/.test(triggerTypeOrId)) {
+          triggerId = triggerTypeOrId;
+          triggerTypeOrId = 'custom'; // bypass auto pageview creation
+        }
         const created = await gtmManager.createGa4EventTag(
           args.name as string,
           (args.measurementId as string | undefined),
           args.eventName as string,
           {
             eventParameters: (args.eventParameters as Record<string, string | number | boolean>) || undefined,
-            triggerType: (args.trigger as string) || 'pageview',
+            triggerType: triggerTypeOrId || 'pageview',
             // Allow passing a specific trigger ID (e.g., Custom Event/Regex)
-            ...(args.triggerId ? { triggerId: args.triggerId as string } : {}),
+            ...(triggerId ? { triggerId } : {}),
             ...(args.configTagId ? { configTagId: args.configTagId as string } : {}),
           }
         );
