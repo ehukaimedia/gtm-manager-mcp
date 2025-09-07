@@ -387,7 +387,9 @@ export class GTMManager {
     }
 
     const params: any[] = [
+      // Support both legacy GA4 Event param and Google tag override param
       { type: 'template', key: 'measurementId', value: measurementId },
+      { type: 'template', key: 'measurementIdOverride', value: measurementId },
       { type: 'template', key: 'eventName', value: eventName },
     ];
     if (options?.eventParameters && Object.keys(options.eventParameters).length > 0) {
