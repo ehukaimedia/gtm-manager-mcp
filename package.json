@@ -1,6 +1,6 @@
 {
   "name": "gtm-manager-mcp",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Model Context Protocol (MCP) server for managing Google Tag Manager.",
   "type": "module",
   "main": "dist/index.js",
