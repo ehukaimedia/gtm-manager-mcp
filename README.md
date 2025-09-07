@@ -138,7 +138,8 @@ If you see "insufficient authentication scopes" on create/publish:
 
 ## Using Globally
 
-- Install globally: `npm i -g .` (or `npm i -g gtm-manager-mcp` once published)
+- Install globally (from npm): `npm i -g gtm-manager-mcp`
+- Or install from source (in repo root): `npm i -g .`
 - Binaries available:
   - `gtm-mcp` (MCP server over stdio)
   - `gtm-mcp-callback` (local OAuth callback at `http://localhost:3101/callback`)
