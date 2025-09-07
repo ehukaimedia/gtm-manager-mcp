@@ -16,6 +16,7 @@ A Model Context Protocol (MCP) server that provides comprehensive Google Tag Man
 ### Tag Management
 - List all tags in a workspace
 - Create custom HTML tags
+- Create native GA4 Configuration/Event tags
 - Update existing tags
 - Delete tags
 - Automatic trigger assignment
@@ -273,6 +274,48 @@ await gtm_create_tag({
   name: "Analytics Event",
   html: "<script>console.log('Page viewed');</script>",
   trigger: "pageview"
+})
+```
+
+#### `gtm_create_ga4_configuration`
+Create a native GA4 Configuration tag.
+
+**Parameters:**
+- `name` (string, required): Tag name
+- `measurementId` (string, required): GA4 Measurement ID (e.g., `G-XXXXXXX`)
+- `sendPageView` (boolean, optional): Send initial `page_view` (default: true)
+- `trigger` (string, optional): Trigger type (default: `pageview`)
+- `fieldsToSet` (object, optional): Additional fields (name -> value)
+
+**Example:**
+```typescript
+await gtm_create_ga4_configuration({
+  name: 'GA4 Config',
+  measurementId: 'G-TEST123',
+  sendPageView: true,
+  trigger: 'pageview',
+  fieldsToSet: { debug_mode: 'true' }
+})
+```
+
+#### `gtm_create_ga4_event`
+Create a native GA4 Event tag.
+
+**Parameters:**
+- `name` (string, required): Tag name
+- `measurementId` (string, required): GA4 Measurement ID (e.g., `G-XXXXXXX`)
+- `eventName` (string, required): Event name (e.g., `login`, `purchase`)
+- `eventParameters` (object, optional): Event params (key -> value)
+- `trigger` (string, optional): Trigger type (default: `pageview`)
+
+**Example:**
+```typescript
+await gtm_create_ga4_event({
+  name: 'GA4 Event Login',
+  measurementId: 'G-TEST123',
+  eventName: 'login',
+  eventParameters: { method: 'email' },
+  trigger: 'pageview'
 })
 ```
 
