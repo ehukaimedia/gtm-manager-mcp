@@ -222,6 +222,30 @@ export class GTMManager {
     return variables.data.variable || [];
   }
 
+  async findTagsByName(query: string) {
+    const gtmId = process.env.GTM_ID;
+    if (!this.accountId || !this.containerId) {
+      if (!gtmId) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(gtmId);
+    }
+    const tags = await this.listTags();
+    const q = query.toLowerCase();
+    return (tags || []).filter((t: any) => String(t.name || '').toLowerCase().includes(q));
+  }
+
+  async findTriggersByName(query: string) {
+    const gtmId = process.env.GTM_ID;
+    if (!this.accountId || !this.containerId) {
+      if (!gtmId) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(gtmId);
+    }
+    const triggers = await this.listTriggers();
+    const q = query.toLowerCase();
+    return (triggers || []).filter((t: any) => String(t.name || '').toLowerCase().includes(q));
+  }
+
   async createTag(name: string, html: string, triggerType: string = 'pageview') {
     if (!this.accountId || !this.containerId) {
       if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
@@ -790,6 +814,30 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'gtm_find_tags',
+    description: 'Find tags by name substring (case-insensitive)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name or substring to search for' },
+        gtmId: { type: 'string', description: 'GTM container ID (optional, uses env default)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'gtm_find_triggers',
+    description: 'Find triggers by name substring (case-insensitive)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name or substring to search for' },
+        gtmId: { type: 'string', description: 'GTM container ID (optional, uses env default)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'gtm_create_tag',
     description: 'Create a new HTML tag in GTM',
     inputSchema: {
@@ -1100,6 +1148,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+
+      case 'gtm_find_tags': {
+        const gtmIdFind = (args?.gtmId as string) || process.env.GTM_ID;
+        if (!gtmIdFind) throw new Error('GTM_ID not provided and not set in environment');
+        await gtmManager.findContainer(gtmIdFind);
+        const nameQ = String(args?.name || '').trim();
+        if (!nameQ) throw new Error('name is required');
+        const matches = await gtmManager.findTagsByName(nameQ);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: matches.length
+                ? `Found ${matches.length} tag(s):\n${matches.map((t: any) => `- ${t.name} (${t.type}) - ID: ${t.tagId}`).join('\n')}`
+                : `No tags matched "${nameQ}"`,
+            },
+          ],
+        };
+      }
+
+      case 'gtm_find_triggers': {
+        const gtmIdFind = (args?.gtmId as string) || process.env.GTM_ID;
+        if (!gtmIdFind) throw new Error('GTM_ID not provided and not set in environment');
+        await gtmManager.findContainer(gtmIdFind);
+        const nameQ = String(args?.name || '').trim();
+        if (!nameQ) throw new Error('name is required');
+        const matches = await gtmManager.findTriggersByName(nameQ);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: matches.length
+                ? `Found ${matches.length} trigger(s):\n${matches.map((t: any) => `- ${t.name} (${t.type}) - ID: ${t.triggerId}`).join('\n')}`
+                : `No triggers matched "${nameQ}"`,
+            },
+          ],
+        };
+      }
 
       case 'gtm_create_tag':
         if (!args?.name || !args?.html) throw new Error('Tag name and HTML are required');

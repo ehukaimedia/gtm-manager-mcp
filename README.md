@@ -260,6 +260,18 @@ List all tags in the current workspace.
 await gtm_list_tags({ gtmId: "GTM-ABC123" })
 ```
 
+#### `gtm_find_tags`
+Find tags by name (case-insensitive substring).
+
+**Parameters:**
+- `name` (string, required): Name or substring to search for
+- `gtmId` (string, optional): GTM container ID
+
+**Example:**
+```typescript
+await gtm_find_tags({ name: 'GA4 Config' })
+```
+
 #### `gtm_create_tag`
 Create a new HTML tag.
 
@@ -418,6 +430,18 @@ List all triggers in the current workspace.
 **Example:**
 ```typescript
 await gtm_list_triggers()
+```
+
+#### `gtm_find_triggers`
+Find triggers by name (case-insensitive substring).
+
+**Parameters:**
+- `name` (string, required): Name or substring to search for
+- `gtmId` (string, optional): GTM container ID
+
+**Example:**
+```typescript
+await gtm_find_triggers({ name: 'Custom Event' })
 ```
 
 #### `gtm_create_trigger`
