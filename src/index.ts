@@ -280,6 +280,143 @@ export class GTMManager {
     return tag.data;
   }
 
+  async createGa4ConfigurationTag(
+    name: string,
+    measurementId: string,
+    options?: { sendPageView?: boolean; triggerType?: string; fieldsToSet?: Record<string, string> }
+  ) {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const workspaces = await this.tagManager.accounts.containers.workspaces.list({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}`,
+    });
+    const workspace = workspaces.data.workspace?.[0];
+    if (!workspace) throw new Error('No workspace found');
+
+    let triggerId: string | undefined;
+    const triggerType = options?.triggerType || 'pageview';
+    if (triggerType === 'pageview') {
+      const triggers = await this.tagManager.accounts.containers.workspaces.triggers.list({
+        parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+      });
+      let allPagesTrigger = triggers.data.trigger?.find((t: any) => t.type === 'pageview');
+      if (!allPagesTrigger) {
+        const newTrigger = await this.tagManager.accounts.containers.workspaces.triggers.create({
+          parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+          requestBody: { name: 'All Pages', type: 'pageview' },
+        });
+        triggerId = newTrigger.data.triggerId as string;
+      } else {
+        triggerId = allPagesTrigger.triggerId as string;
+      }
+    }
+
+    const params: any[] = [
+      { type: 'template', key: 'measurementId', value: measurementId },
+    ];
+    if (typeof options?.sendPageView === 'boolean') {
+      params.push({ type: 'boolean', key: 'sendPageView', value: options.sendPageView ? 'true' : 'false' });
+    }
+    if (options?.fieldsToSet && Object.keys(options.fieldsToSet).length > 0) {
+      params.push({
+        type: 'list',
+        key: 'fieldsToSet',
+        list: Object.entries(options.fieldsToSet).map(([k, v]) => ({
+          type: 'map',
+          map: [
+            { type: 'template', key: 'name', value: k },
+            { type: 'template', key: 'value', value: String(v) },
+          ],
+        })),
+      });
+    }
+
+    const tag = await this.tagManager.accounts.containers.workspaces.tags.create({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+      requestBody: {
+        name,
+        type: 'gaawc',
+        parameter: params,
+        firingTriggerId: triggerId ? [triggerId] : undefined,
+      },
+    });
+
+    return tag.data;
+  }
+
+  async createGa4EventTag(
+    name: string,
+    measurementId: string,
+    eventName: string,
+    options?: { eventParameters?: Record<string, string | number | boolean>; triggerType?: string }
+  ) {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const workspaces = await this.tagManager.accounts.containers.workspaces.list({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}`,
+    });
+    const workspace = workspaces.data.workspace?.[0];
+    if (!workspace) throw new Error('No workspace found');
+
+    let triggerId: string | undefined;
+    const triggerType = options?.triggerType || 'pageview';
+    if (triggerType === 'pageview') {
+      const triggers = await this.tagManager.accounts.containers.workspaces.triggers.list({
+        parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+      });
+      let allPagesTrigger = triggers.data.trigger?.find((t: any) => t.type === 'pageview');
+      if (!allPagesTrigger) {
+        const newTrigger = await this.tagManager.accounts.containers.workspaces.triggers.create({
+          parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+          requestBody: { name: 'All Pages', type: 'pageview' },
+        });
+        triggerId = newTrigger.data.triggerId as string;
+      } else {
+        triggerId = allPagesTrigger.triggerId as string;
+      }
+    }
+
+    const params: any[] = [
+      { type: 'template', key: 'measurementId', value: measurementId },
+      { type: 'template', key: 'eventName', value: eventName },
+    ];
+    if (options?.eventParameters && Object.keys(options.eventParameters).length > 0) {
+      params.push({
+        type: 'list',
+        key: 'eventParameters',
+        list: Object.entries(options.eventParameters).map(([k, v]) => ({
+          type: 'map',
+          map: [
+            { type: 'template', key: 'name', value: k },
+            { type: 'template', key: 'value', value: String(v) },
+          ],
+        })),
+      });
+    }
+
+    const tag = await this.tagManager.accounts.containers.workspaces.tags.create({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+      requestBody: {
+        name,
+        type: 'gaawe',
+        parameter: params,
+        firingTriggerId: triggerId ? [triggerId] : undefined,
+      },
+    });
+
+    return tag.data;
+  }
+
 
   async deleteTag(tagId: string) {
     if (!this.accountId || !this.containerId) {
@@ -665,6 +802,36 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'gtm_create_ga4_configuration',
+    description: 'Create a native GA4 Configuration tag',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Tag name' },
+        measurementId: { type: 'string', description: 'GA4 Measurement ID (e.g., G-XXXXXXX)' },
+        sendPageView: { type: 'boolean', description: 'Send a page_view on load', default: true },
+        trigger: { type: 'string', description: 'Trigger type (default: pageview)', default: 'pageview' },
+        fieldsToSet: { type: 'object', description: 'Additional fields to set (name -> value)' },
+      },
+      required: ['name', 'measurementId'],
+    },
+  },
+  {
+    name: 'gtm_create_ga4_event',
+    description: 'Create a native GA4 Event tag',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Tag name' },
+        measurementId: { type: 'string', description: 'GA4 Measurement ID (e.g., G-XXXXXXX)' },
+        eventName: { type: 'string', description: 'GA4 event name (e.g., page_view, purchase)' },
+        eventParameters: { type: 'object', description: 'Event parameters (key -> value)' },
+        trigger: { type: 'string', description: 'Trigger type (default: pageview)', default: 'pageview' },
+      },
+      required: ['name', 'measurementId', 'eventName'],
+    },
+  },
+  {
     name: 'gtm_delete_tag',
     description: 'Delete a tag from GTM',
     inputSchema: {
@@ -949,6 +1116,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+
+      case 'gtm_create_ga4_configuration': {
+        if (!args?.name || !args?.measurementId) throw new Error('name and measurementId are required');
+        const created = await gtmManager.createGa4ConfigurationTag(
+          args.name as string,
+          args.measurementId as string,
+          {
+            sendPageView: typeof args.sendPageView === 'boolean' ? (args.sendPageView as boolean) : undefined,
+            triggerType: (args.trigger as string) || 'pageview',
+            fieldsToSet: (args.fieldsToSet as Record<string, string>) || undefined,
+          }
+        );
+        return {
+          content: [
+            { type: 'text', text: `GA4 Configuration tag created!\nName: ${created.name}\nID: ${created.tagId}` },
+          ],
+        };
+      }
+
+      case 'gtm_create_ga4_event': {
+        if (!args?.name || !args?.measurementId || !args?.eventName) throw new Error('name, measurementId, and eventName are required');
+        const created = await gtmManager.createGa4EventTag(
+          args.name as string,
+          args.measurementId as string,
+          args.eventName as string,
+          {
+            eventParameters: (args.eventParameters as Record<string, string | number | boolean>) || undefined,
+            triggerType: (args.trigger as string) || 'pageview',
+          }
+        );
+        return {
+          content: [
+            { type: 'text', text: `GA4 Event tag created!\nName: ${created.name}\nID: ${created.tagId}` },
+          ],
+        };
+      }
 
 
       case 'gtm_create_variable':
