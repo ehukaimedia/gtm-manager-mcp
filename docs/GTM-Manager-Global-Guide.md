@@ -79,3 +79,66 @@ Common tools (from your MCP client): `gtm_auth`, `gtm_authenticate`, `gtm_list_t
 - Tokens are stored per project under `GTM_TOKEN_DIR` with restrictive permissions.
 - Never commit tokens or secrets. Keep `.gtm/` ignored.
 - Limit scopes and GTM permissions to least privilege necessary.
+
+---
+
+## Global Setup (Single Env + Token Shared Across Projects)
+
+Use this when you want Codex CLI to always load the GTM MCP server with one shared configuration and token store.
+
+### 1) Install and build
+```bash
+npm run build
+npm i -g .
+```
+
+### 2) Create a wrapper script
+This wrapper loads an external `.env` and points the server at a central token directory. Adjust paths to your environment.
+
+Generic template:
+```bash
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/gtm-mcp-global <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+ENV_FILE="/absolute/path/to/.env"    # update
+TOKEN_DIR="/absolute/path/to/data"   # contains gtm-token.json
+if [ -f "$ENV_FILE" ]; then
+  set -a; source "$ENV_FILE"; set +a
+fi
+export GTM_TOKEN_DIR="$TOKEN_DIR"
+exec gtm-mcp "$@"
+SH
+chmod +x ~/.local/bin/gtm-mcp-global
+```
+
+Example (matches a local site setup):
+```bash
+ENV_FILE="/Users/ehukaimedia/Desktop/Local-Sites/ehukai-media/.env"
+TOKEN_DIR="/Users/ehukaimedia/Desktop/Local-Sites/ehukai-media/data"
+```
+
+### 3) Configure Codex CLI
+Add to `~/.codex/config.toml`:
+```toml
+[mcp_servers.gtm]
+command = "/Users/ehukaimedia/.local/bin/gtm-mcp-global"
+```
+
+You can keep your existing per‑project entry (e.g., `[mcp_servers.gtm_manager]`) alongside this.
+
+### 4) Reuse an existing token
+If a valid token already exists at `GTM_TOKEN_DIR/gtm-token.json`, the server will use it. This is ideal for sharing auth across projects.
+
+### 5) Restart and verify
+- Restart Codex CLI sessions to load the new config.
+- In a fresh session, call the tool (e.g., request `gtm_health`).
+- Or, from a shell with the same env, run:
+  ```bash
+  gtm-mcp-auth auth:url   # should output a consent URL
+  ```
+
+### Notes
+- Ensure `GOOGLE_REDIRECT_URI` in the `.env` matches your callback (default `http://localhost:3101/callback`).
+- Start the callback server when authenticating interactively: `gtm-mcp-callback`.
+- For token refresh, a `refresh_token` must be present; re‑consent if missing.

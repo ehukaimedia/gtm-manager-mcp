@@ -163,6 +163,37 @@ Quick global auth flow per project:
 2. `gtm-mcp-auth auth:url` → open URL and approve
 3. `gtm-mcp-auth auth:exchange "<code>"`
 
+### Global Codex CLI integration (single env/token)
+
+If you want the MCP server available in every Codex CLI session with a single shared `.env` and token directory:
+
+1. Create a wrapper script (adjust paths):
+   ```bash
+   mkdir -p ~/.local/bin
+   cat > ~/.local/bin/gtm-mcp-global <<'SH'
+   #!/usr/bin/env bash
+   set -euo pipefail
+   ENV_FILE="/absolute/path/to/.env"         # update
+   TOKEN_DIR="/absolute/path/to/data"        # contains gtm-token.json
+   if [ -f "$ENV_FILE" ]; then
+     set -a; source "$ENV_FILE"; set +a
+   fi
+   export GTM_TOKEN_DIR="$TOKEN_DIR"
+   exec gtm-mcp "$@"
+   SH
+   chmod +x ~/.local/bin/gtm-mcp-global
+   ```
+2. Add to Codex config `~/.codex/config.toml`:
+   ```toml
+   [mcp_servers.gtm]
+   command = "/Users/you/.local/bin/gtm-mcp-global"
+   ```
+3. Restart Codex CLI. In a new session, call the tool (e.g., ask to run `gtm_health`).
+
+Tip: To reuse an existing token, set `GTM_TOKEN_DIR` to the directory that already contains `gtm-token.json`.
+
+See `docs/GTM-Manager-Global-Guide.md` for a step‑by‑step walkthrough.
+
 ## API Reference
 
 ### Health
