@@ -307,6 +307,7 @@ Create a native GA4 Event tag.
 - `eventName` (string, required): Event name (e.g., `login`, `purchase`)
 - `eventParameters` (object, optional): Event params (key -> value)
 - `trigger` (string, optional): Trigger type (default: `pageview`)
+- `triggerId` (string, optional): Explicit Trigger ID to use (e.g., a Custom Event/Regex trigger)
 
 **Example:**
 ```typescript
@@ -315,7 +316,8 @@ await gtm_create_ga4_event({
   measurementId: 'G-TEST123',
   eventName: 'login',
   eventParameters: { method: 'email' },
-  trigger: 'pageview'
+  trigger: 'pageview',
+  // or: triggerId: '43'
 })
 ```
 

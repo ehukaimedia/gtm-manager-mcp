@@ -298,9 +298,9 @@ export class GTMManager {
     const workspace = workspaces.data.workspace?.[0];
     if (!workspace) throw new Error('No workspace found');
 
-    let triggerId: string | undefined;
+    let triggerId: string | undefined = (options as any)?.triggerId;
     const triggerType = options?.triggerType || 'pageview';
-    if (triggerType === 'pageview') {
+    if (!triggerId && triggerType === 'pageview') {
       const triggers = await this.tagManager.accounts.containers.workspaces.triggers.list({
         parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
       });
@@ -387,11 +387,15 @@ export class GTMManager {
     }
 
     const params: any[] = [
-      // Support both legacy GA4 Event param and Google tag override param
       { type: 'template', key: 'measurementId', value: measurementId },
-      { type: 'template', key: 'measurementIdOverride', value: measurementId },
       { type: 'template', key: 'eventName', value: eventName },
     ];
+    // For Google tag-based containers, provide override as a list of IDs
+    params.push({
+      type: 'list',
+      key: 'measurementIdOverride',
+      list: [ { type: 'template', value: measurementId } ],
+    });
     if (options?.eventParameters && Object.keys(options.eventParameters).length > 0) {
       params.push({
         type: 'list',
@@ -1146,6 +1150,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             eventParameters: (args.eventParameters as Record<string, string | number | boolean>) || undefined,
             triggerType: (args.trigger as string) || 'pageview',
+            // Allow passing a specific trigger ID (e.g., Custom Event/Regex)
+            ...(args.triggerId ? { triggerId: args.triggerId as string } : {}),
           }
         );
         return {
