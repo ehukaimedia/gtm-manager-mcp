@@ -9,6 +9,14 @@
     "gtm-mcp-callback": "dist/callbackBin.js",
     "gtm-mcp-auth": "dist/cli.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ehukaimedia/gtm-manager-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ehukaimedia/gtm-manager-mcp/issues"
+  },
+  "homepage": "https://github.com/ehukaimedia/gtm-manager-mcp#readme",
   "engines": {
     "node": ">=18"
   },
@@ -27,7 +35,9 @@
     "list": "npm run build && node dist/list.js",
     "version:create": "node dist/cli.js version:create",
     "version:publish": "node dist/cli.js version:publish",
-    "submit": "node dist/cli.js submit"
+    "submit": "node dist/cli.js submit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test"
   },
   "files": [
     "dist/index.js",
@@ -36,6 +46,7 @@
     "dist/callbackServer.js",
     "dist/cli.js",
     "dist/list.js",
+    "LICENSE",
     "README.md",
     "AGENTS.md",
     ".env.example"
@@ -49,10 +60,15 @@
     "codex"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
     "google-auth-library": "^10.3.0",
-    "googleapis": "^158.0.0",
+    "googleapis": "^158.0.0"
+  },
+  "devDependencies": {
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2"
   }
