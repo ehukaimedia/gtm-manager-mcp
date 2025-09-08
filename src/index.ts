@@ -246,6 +246,67 @@ export class GTMManager {
     return (triggers || []).filter((t: any) => String(t.name || '').toLowerCase().includes(q));
   }
 
+  async findVariablesByName(query: string, exact?: boolean) {
+    const gtmId = process.env.GTM_ID;
+    if (!this.accountId || !this.containerId) {
+      if (!gtmId) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(gtmId);
+    }
+    const variables = await this.listVariables();
+    const q = query.toLowerCase();
+    return (variables || []).filter((v: any) => {
+      const name = String(v.name || '');
+      return exact ? name === query : name.toLowerCase().includes(q);
+    });
+  }
+
+  async validateWorkspace() {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+    const [tags, variables, triggers] = await Promise.all([
+      this.listTags(),
+      this.listVariables(),
+      this.listTriggers(),
+    ]);
+    const varNames = new Set((variables || []).map((v: any) => String(v.name || '')));
+    const triggerIds = new Set((triggers || []).map((t: any) => String(t.triggerId || '')));
+    const issues: string[] = [];
+
+    for (const tag of (tags as any[])) {
+      const p = (tag.parameter || []) as any[];
+      if (Array.isArray(tag.firingTriggerId)) {
+        for (const tid of tag.firingTriggerId) {
+          if (tid && !triggerIds.has(String(tid))) issues.push(`Tag '${tag.name}' references missing trigger ${tid}`);
+        }
+      }
+      if (tag.type === 'gaawe') {
+        const hasSendTo = p.some((x) => x.key === 'sendToTag');
+        const hasMid = p.some((x) => x.key === 'measurementId');
+        const hasMidOverride = p.some((x) => x.key === 'measurementIdOverride');
+        if (!hasSendTo && !hasMid && !hasMidOverride) {
+          issues.push(`GA4 Event '${tag.name}' missing configTagId/measurementId`);
+        }
+      }
+      const evp = p.find((x) => x.key === 'eventParameters');
+      if (evp && Array.isArray(evp.list)) {
+        for (const m of evp.list as any[]) {
+          const valueEntry = (m.map || []).find((e: any) => e.key === 'value');
+          const val = valueEntry?.value as string | undefined;
+          const macro = val && /\{\{([^}]+)\}\}/.exec(val);
+          if (macro && !varNames.has(macro[1])) {
+            issues.push(`Tag '${tag.name}' references unknown variable '{{${macro[1]}}}'`);
+          }
+        }
+      }
+    }
+
+    return { ok: issues.length === 0, issues };
+  }
+
   async createTag(name: string, html: string, triggerType: string = 'pageview') {
     if (!this.accountId || !this.containerId) {
       if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
@@ -377,7 +438,7 @@ export class GTMManager {
     name: string,
     measurementId: string | undefined,
     eventName: string,
-    options?: { configTagId?: string; eventParameters?: Record<string, string | number | boolean>; triggerType?: string; triggerId?: string }
+    options?: { configTagId?: string; eventParameters?: Record<string, any>; triggerType?: string; triggerId?: string; resolveVariables?: boolean }
   ) {
     if (!this.accountId || !this.containerId) {
       if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
@@ -427,17 +488,39 @@ export class GTMManager {
       throw new Error('Either configTagId or measurementId is required');
     }
     if (options?.eventParameters && Object.keys(options.eventParameters).length > 0) {
-      params.push({
-        type: 'list',
-        key: 'eventParameters',
-        list: Object.entries(options.eventParameters).map(([k, v]) => ({
+      const variables = options.resolveVariables ? await this.listVariables() : [];
+      const varById = new Map<string, any>();
+      const varByName = new Map<string, any>();
+      for (const v of variables as any[]) {
+        if (v.variableId) varById.set(String(v.variableId), v);
+        if (v.name) varByName.set(String(v.name), v);
+      }
+      const list = Object.entries(options.eventParameters).map(([k, spec]) => {
+        let valueStr: string;
+        if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+          if ('value' in spec) {
+            valueStr = String((spec as any).value);
+          } else if ('varId' in spec) {
+            const vv = varById.get(String((spec as any).varId));
+            valueStr = vv ? `{{${vv.name}}}` : `{{${(spec as any).varId}}}`;
+          } else if ('var' in spec) {
+            const vv = varByName.get(String((spec as any).var));
+            valueStr = vv ? `{{${vv.name}}}` : `{{${(spec as any).var}}}`;
+          } else {
+            valueStr = String(spec as any);
+          }
+        } else {
+          valueStr = String(spec as any);
+        }
+        return {
           type: 'map',
           map: [
             { type: 'template', key: 'name', value: k },
-            { type: 'template', key: 'value', value: String(v) },
+            { type: 'template', key: 'value', value: valueStr },
           ],
-        })),
+        };
       });
+      params.push({ type: 'list', key: 'eventParameters', list });
     }
 
     const tag = await this.tagManager.accounts.containers.workspaces.tags.create({
@@ -504,6 +587,41 @@ export class GTMManager {
             value: code
           }
         ]
+      }
+    });
+
+    return variable.data;
+  }
+
+  async createDataLayerVariable(name: string, dlvName: string, dataLayerVersion: 1 | 2 = 2, defaultValue?: string) {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const workspaces = await this.tagManager.accounts.containers.workspaces.list({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}`
+    });
+
+    const workspace = workspaces.data.workspace?.[0];
+    if (!workspace) throw new Error('No workspace found');
+
+    const parameter: any[] = [
+      { type: 'template', key: 'name', value: dlvName },
+      { type: 'template', key: 'dataLayerVersion', value: String(dataLayerVersion) },
+    ];
+    if (typeof defaultValue === 'string' && defaultValue.length > 0) {
+      parameter.push({ type: 'template', key: 'defaultValue', value: defaultValue });
+    }
+
+    const variable = await this.tagManager.accounts.containers.workspaces.variables.create({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
+      requestBody: {
+        name,
+        type: 'v',
+        parameter,
       }
     });
 
@@ -931,6 +1049,39 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'gtm_create_dlv',
+    description: 'Create a new Data Layer Variable (DLV) in GTM',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Variable display name' },
+        dlvName: { type: 'string', description: 'Data Layer key (e.g., page.path)' },
+        dataLayerVersion: { type: 'number', description: 'Data layer version (1 or 2)', default: 2 },
+        defaultValue: { type: 'string', description: 'Default value when key missing (optional)' },
+      },
+      required: ['name', 'dlvName'],
+    },
+  },
+  {
+    name: 'gtm_find_variables',
+    description: 'Find variables by name substring (case-insensitive)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name or substring to search for' },
+        exact: { type: 'boolean', description: 'Require exact match', default: false },
+        idsOnly: { type: 'boolean', description: 'Return IDs only', default: false },
+        gtmId: { type: 'string', description: 'GTM container ID (optional, uses env default)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'gtm_validate_workspace',
+    description: 'Validate the current workspace for common blocking issues before publish',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'gtm_delete_variable',
     description: 'Delete a variable from GTM',
     inputSchema: {
@@ -1250,11 +1401,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           (args.measurementId as string | undefined),
           args.eventName as string,
           {
-            eventParameters: (args.eventParameters as Record<string, string | number | boolean>) || undefined,
+            eventParameters: (args.eventParameters as Record<string, any>) || undefined,
             triggerType: triggerTypeOrId || 'pageview',
             // Allow passing a specific trigger ID (e.g., Custom Event/Regex)
             ...(triggerId ? { triggerId } : {}),
             ...(args.configTagId ? { configTagId: args.configTagId as string } : {}),
+            ...(typeof args.resolveVariables === 'boolean' ? { resolveVariables: Boolean(args.resolveVariables) } : {}),
           }
         );
         return {
@@ -1281,6 +1433,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
 
+      case 'gtm_create_dlv': {
+        if (!args?.name || !args?.dlvName) throw new Error('name and dlvName are required');
+        const v = await gtmManager.createDataLayerVariable(
+          args.name as string,
+          args.dlvName as string,
+          (args.dataLayerVersion as number) === 1 ? 1 : 2,
+          (args.defaultValue as string | undefined)
+        );
+        return {
+          content: [
+            { type: 'text', text: `DLV created!\nName: ${v.name}\nID: ${v.variableId}` },
+          ],
+        };
+      }
+
       case 'gtm_delete_variable':
         if (!args?.variableId) throw new Error('Variable ID is required');
         const varResult = await gtmManager.deleteVariable(args.variableId as string);
@@ -1292,6 +1459,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+
+      case 'gtm_find_variables': {
+        const gtmIdFind = (args?.gtmId as string) || process.env.GTM_ID;
+        if (!gtmIdFind) throw new Error('GTM_ID not provided and not set in environment');
+        await gtmManager.findContainer(gtmIdFind);
+        const nameQ = String(args?.name || '').trim();
+        if (!nameQ) throw new Error('name is required');
+        const exact = Boolean(args?.exact);
+        const idsOnly = Boolean(args?.idsOnly);
+        const matches = await gtmManager.findVariablesByName(nameQ, exact);
+        const body = idsOnly
+          ? matches.map((v: any) => v.variableId).join('\n')
+          : matches.length
+            ? `Found ${matches.length} variable(s):\n${matches.map((v: any) => `- ${v.name} (${v.type}) - ID: ${v.variableId}`).join('\n')}`
+            : `No variables matched "${nameQ}"`;
+        return { content: [{ type: 'text', text: body }] };
+      }
+
+      case 'gtm_validate_workspace': {
+        const res = await gtmManager.validateWorkspace();
+        const text = res.ok
+          ? 'Workspace validation passed: no blocking issues detected.'
+          : `Workspace validation found ${res.issues.length} issue(s):\n- ${res.issues.join('\n- ')}`;
+        return { content: [{ type: 'text', text }], isError: res.ok ? false : true } as any;
+      }
 
       case 'gtm_update_tag':
         if (!args?.tagId) throw new Error('Tag ID is required');
@@ -1395,15 +1587,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'gtm_submit': {
-        const res = await gtmManager.submit(args?.name as string | undefined, args?.notes as string | undefined);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Submit successful!\nVersion ID: ${res.versionId}`,
-            },
-          ],
-        };
+        try {
+          const res = await gtmManager.submit(args?.name as string | undefined, args?.notes as string | undefined);
+          return { content: [{ type: 'text', text: `Submit successful!\nVersion ID: ${res.versionId}` }] };
+        } catch (e: any) {
+          const code = e?.code || e?.response?.status || 'unknown';
+          const msg = e?.message || e?.response?.data || String(e);
+          const path = gtmManager && (gtmManager as any).accountId && (gtmManager as any).containerId
+            ? `accounts/${(gtmManager as any).accountId}/containers/${(gtmManager as any).containerId}`
+            : '(unresolved container)';
+          const scopes = ['https://www.googleapis.com/auth/tagmanager.readonly','https://www.googleapis.com/auth/tagmanager.edit.containers','https://www.googleapis.com/auth/tagmanager.edit.containerversions','https://www.googleapis.com/auth/tagmanager.publish'];
+          const detail = `Submit failed (HTTP ${code}).\nPath: ${path}\nNeeded scopes: ${scopes.join(', ')}\nMessage: ${msg}`;
+          return { content: [{ type: 'text', text: detail }], isError: true };
+        }
       }
 
       default:
