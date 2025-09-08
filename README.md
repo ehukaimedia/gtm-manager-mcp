@@ -18,18 +18,22 @@ A Model Context Protocol (MCP) server that provides comprehensive Google Tag Man
 - Create custom HTML tags
 - Create native GA4 Configuration/Event tags
 - Update existing tags
+- Update GA4 Event tags in place
 - Delete tags
 - Automatic trigger assignment
+- Pause/unpause tags
 
 ### Variable Management
 - List all variables
 - Create Custom JavaScript variables
+- Create Data Layer Variables (DLVs)
 - Update variable code
 - Delete variables
 
 ### Trigger Management
 - List all triggers
 - Create triggers (Page View, Click, etc.)
+- Create Custom Event triggers (regex supported)
 - Update trigger conditions
 - Delete triggers
 
@@ -266,6 +270,8 @@ Find tags by name (case-insensitive substring).
 **Parameters:**
 - `name` (string, required): Name or substring to search for
 - `gtmId` (string, optional): GTM container ID
+ - `exact` (boolean, optional): Exact match only
+ - `idsOnly` (boolean, optional): Return IDs only
 
 **Example:**
 ```typescript
@@ -318,9 +324,10 @@ Create a native GA4 Event tag.
 - `measurementId` (string, optional): GA4 Measurement ID (e.g., `G-XXXXXXX`). Optional when `configTagId` is provided.
 - `configTagId` (string, optional): ID of a GA4 Configuration tag to link. Prefer this for Google tag containers.
 - `eventName` (string, required): Event name (e.g., `login`, `purchase`)
-- `eventParameters` (object, optional): Event params (key -> value)
+- `eventParameters` (object, optional): Supports `{ value }`, `{ var: 'Name' }`, `{ varId: '53' }`. With `resolveVariables: true`, names/IDs are resolved into macros.
 - `trigger` (string, optional): Trigger type (default: `pageview`)
 - `triggerId` (string, optional): Explicit Trigger ID to use (e.g., a Custom Event/Regex trigger)
+- `resolveVariables` (boolean, optional): Enable var resolution in parameters
 
 **Example:**
 ```typescript
@@ -336,6 +343,30 @@ await gtm_create_ga4_event({
 Notes:
 - When `configTagId` is provided, the event references your GA4 Configuration tag (recommended). It maps to the vendor key `sendToTag` and does not set `measurementIdOverride`.
 - If you pass `trigger: "43"` without `triggerId`, the tool will treat it as an ID automatically.
+
+#### `gtm_update_ga4_event_tag`
+Update an existing GA4 Event tag in place.
+
+**Parameters:**
+- `tagId` (string, required)
+- Optional: `name`, `configTagId`, `measurementId`, `eventName`, `eventParameters`, `trigger` or `triggerId`, `resolveVariables`
+
+**Example:**
+```typescript
+await gtm_update_ga4_event_tag({ tagId: '57', configTagId: '44', eventName: '{{Event}}', triggerId: '43' })
+```
+
+#### `gtm_pause_tag` / `gtm_unpause_tag`
+Pause or unpause a tag non-destructively.
+
+**Parameters:**
+- `tagId` (string, required)
+
+**Example:**
+```typescript
+await gtm_pause_tag({ tagId: '32' })
+await gtm_unpause_tag({ tagId: '32' })
+```
 
 #### `gtm_update_tag`
 Update an existing tag.
@@ -439,6 +470,8 @@ Find triggers by name (case-insensitive substring).
 **Parameters:**
 - `name` (string, required): Name or substring to search for
 - `gtmId` (string, optional): GTM container ID
+ - `exact` (boolean, optional): Exact match only
+ - `idsOnly` (boolean, optional): Return IDs only
 
 **Example:**
 ```typescript

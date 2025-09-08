@@ -695,6 +695,126 @@ export class GTMManager {
     return updated.data;
   }
 
+  async pauseTag(tagId: string, paused: boolean) {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const workspaces = await this.tagManager.accounts.containers.workspaces.list({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}`
+    });
+    const workspace = workspaces.data.workspace?.[0];
+    if (!workspace) throw new Error('No workspace found');
+
+    const existingTag = await this.tagManager.accounts.containers.workspaces.tags.get({
+      path: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}/tags/${tagId}`
+    });
+
+    const updateBody: any = { ...existingTag.data, paused };
+    const updated = await this.tagManager.accounts.containers.workspaces.tags.update({
+      path: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}/tags/${tagId}`,
+      requestBody: updateBody,
+    });
+    return updated.data;
+  }
+
+  async updateGa4EventTag(
+    tagId: string,
+    updates: {
+      name?: string;
+      configTagId?: string;
+      measurementId?: string;
+      eventName?: string;
+      eventParameters?: Record<string, any>;
+      triggerId?: string;
+      triggerType?: string;
+      resolveVariables?: boolean;
+    }
+  ) {
+    if (!this.accountId || !this.containerId) {
+      if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
+      this.ensureAuth();
+      await this.findContainer(process.env.GTM_ID);
+    }
+
+    this.ensureAuth();
+    const workspaces = await this.tagManager.accounts.containers.workspaces.list({
+      parent: `accounts/${this.accountId}/containers/${this.containerId}`
+    });
+    const workspace = workspaces.data.workspace?.[0];
+    if (!workspace) throw new Error('No workspace found');
+
+    const getPath = (id: string) => `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}/tags/${id}`;
+    const existing = await this.tagManager.accounts.containers.workspaces.tags.get({ path: getPath(tagId) });
+    const body: any = { ...existing.data };
+    body.parameter = Array.isArray(body.parameter) ? body.parameter : [];
+
+    if (updates.name) body.name = updates.name;
+    if (updates.eventName) {
+      let p = body.parameter.find((x: any) => x.key === 'eventName');
+      if (p) p.value = updates.eventName; else body.parameter.push({ type: 'template', key: 'eventName', value: updates.eventName });
+    }
+
+    // Config linkage vs measurementId
+    if (updates.configTagId) {
+      // Ensure sendToTag present, remove measurementId/override
+      let st = body.parameter.find((x: any) => x.key === 'sendToTag');
+      if (st) { st.type = 'tagReference'; st.value = updates.configTagId; }
+      else body.parameter.push({ type: 'tagReference', key: 'sendToTag', value: updates.configTagId });
+      body.parameter = body.parameter.filter((x: any) => x.key !== 'measurementId' && x.key !== 'measurementIdOverride');
+    } else if (updates.measurementId) {
+      let mid = body.parameter.find((x: any) => x.key === 'measurementId');
+      if (mid) mid.value = updates.measurementId; else body.parameter.push({ type: 'template', key: 'measurementId', value: updates.measurementId });
+      // override as list
+      let over = body.parameter.find((x: any) => x.key === 'measurementIdOverride');
+      if (over) { over.type = 'list'; over.list = [{ type: 'template', value: updates.measurementId }]; }
+      else body.parameter.push({ type: 'list', key: 'measurementIdOverride', list: [{ type: 'template', value: updates.measurementId }] });
+      // remove sendToTag if switching away
+      body.parameter = body.parameter.filter((x: any) => x.key !== 'sendToTag');
+    }
+
+    // Update eventParameters if provided
+    if (updates.eventParameters) {
+      let variables: any[] = [];
+      if (updates.resolveVariables) variables = await this.listVariables() as any[];
+      const varById = new Map<string, any>();
+      const varByName = new Map<string, any>();
+      for (const v of variables) { if (v.variableId) varById.set(String(v.variableId), v); if (v.name) varByName.set(String(v.name), v); }
+      const list = Object.entries(updates.eventParameters).map(([k, spec]) => {
+        let valueStr: string;
+        if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+          if ('value' in spec) valueStr = String((spec as any).value);
+          else if ('varId' in spec) { const vv = varById.get(String((spec as any).varId)); valueStr = vv ? `{{${vv.name}}}` : `{{${(spec as any).varId}}}`; }
+          else if ('var' in spec) { const vv = varByName.get(String((spec as any).var)); valueStr = vv ? `{{${vv.name}}}` : `{{${(spec as any).var}}}`; }
+          else valueStr = String(spec as any);
+        } else valueStr = String(spec as any);
+        return { type: 'map', map: [ { type: 'template', key: 'name', value: k }, { type: 'template', key: 'value', value: valueStr } ] };
+      });
+      let evp = body.parameter.find((x: any) => x.key === 'eventParameters');
+      if (evp) { evp.type = 'list'; evp.list = list; }
+      else body.parameter.push({ type: 'list', key: 'eventParameters', list });
+    }
+
+    // Update triggers
+    if (updates.triggerId) {
+      body.firingTriggerId = [updates.triggerId];
+    } else if (updates.triggerType === 'pageview') {
+      // ensure All Pages exists
+      const work = await this.tagManager.accounts.containers.workspaces.triggers.list({ parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}` });
+      let all = (work.data.trigger || []).find((t: any) => t.type === 'pageview');
+      if (!all) {
+        const newt = await this.tagManager.accounts.containers.workspaces.triggers.create({ parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}` , requestBody: { name: 'All Pages', type: 'pageview' }});
+        body.firingTriggerId = [newt.data.triggerId];
+      } else body.firingTriggerId = [all.triggerId];
+    }
+
+    const updated = await this.tagManager.accounts.containers.workspaces.tags.update({ path: getPath(tagId), requestBody: body });
+    return updated.data;
+  }
+
   async updateVariable(variableId: string, name?: string, code?: string) {
     if (!this.accountId || !this.containerId) {
       if (!process.env.GTM_ID) throw new Error('GTM_ID environment variable not set');
@@ -1140,6 +1260,53 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'gtm_update_ga4_event_tag',
+    description: 'Update a GA4 Event tag in place (name, linkage, triggers, parameters)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tagId: { type: 'string', description: 'GA4 Event tag ID' },
+        name: { type: 'string', description: 'New tag name (optional)' },
+        configTagId: { type: 'string', description: 'GA4 Configuration tag ID to link (sendToTag)' },
+        measurementId: { type: 'string', description: 'Measurement ID (used if no configTagId)' },
+        eventName: { type: 'string', description: 'GA4 event name (optional)' },
+        eventParameters: { type: 'object', description: 'Event parameters (supports {value}|{var}|{varId})' },
+        triggerId: { type: 'string', description: 'Trigger ID to use (optional)' },
+        trigger: { type: 'string', description: 'Trigger type (e.g., pageview) if not using triggerId' },
+        resolveVariables: { type: 'boolean', description: 'Resolve variable names/IDs in eventParameters', default: false },
+      },
+      required: ['tagId'],
+    },
+  },
+  {
+    name: 'gtm_pause_tag',
+    description: 'Pause a tag (non-destructive)',
+    inputSchema: { type: 'object', properties: { tagId: { type: 'string' } }, required: ['tagId'] },
+  },
+  {
+    name: 'gtm_unpause_tag',
+    description: 'Unpause a tag',
+    inputSchema: { type: 'object', properties: { tagId: { type: 'string' } }, required: ['tagId'] },
+  },
+  {
+    name: 'gtm_list_versions',
+    description: 'List container versions (name, notes, created time)',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'gtm_create_custom_event_trigger',
+    description: 'Create a Custom Event trigger with optional regex filter',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Trigger name' },
+        eventName: { type: 'string', description: 'Data Layer event name (e.g., login)' },
+        regex: { type: 'boolean', description: 'Treat eventName as regex (optional)', default: false },
+      },
+      required: ['name', 'eventName'],
+    },
+  },
+  {
     name: 'gtm_list_triggers',
     description: 'List all triggers in the GTM container',
     inputSchema: {
@@ -1279,7 +1446,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Found ${tags.length} tags:\n${tags
-                .map((tag: any) => `- ${tag.name} (${tag.type}) - ID: ${tag.tagId}`)
+                .map((tag: any) => {
+                  const typeMap: Record<string,string> = { gaawe: 'GA4 Event', gaawc: 'GA4 Config', html: 'Custom HTML' };
+                  const friendly = typeMap[tag.type] || tag.type;
+                  const paused = tag.paused ? ' (paused)' : '';
+                  return `- ${tag.name}${paused} [${friendly}] - ID: ${tag.tagId}`;
+                })
                 .join('\n')}`,
             },
           ],
@@ -1295,7 +1467,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Found ${variables.length} variables:\n${variables
-                .map((variable: any) => `- ${variable.name} (${variable.type}) - ID: ${variable.variableId}`)
+                .map((variable: any) => {
+                  const typeMap: Record<string,string> = { jsm: 'Custom JS', v: 'Data Layer Var' };
+                  const friendly = typeMap[variable.type] || variable.type;
+                  return `- ${variable.name} [${friendly}] - ID: ${variable.variableId}`;
+                })
                 .join('\n')}`,
             },
           ],
@@ -1307,14 +1483,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         await gtmManager.findContainer(gtmIdFind);
         const nameQ = String(args?.name || '').trim();
         if (!nameQ) throw new Error('name is required');
-        const matches = await gtmManager.findTagsByName(nameQ);
+        const exact = Boolean(args?.exact);
+        const idsOnly = Boolean(args?.idsOnly);
+        let matches = await gtmManager.findTagsByName(nameQ);
+        if (exact) matches = matches.filter((t: any) => String(t.name || '') === nameQ);
         return {
           content: [
             {
               type: 'text',
-              text: matches.length
-                ? `Found ${matches.length} tag(s):\n${matches.map((t: any) => `- ${t.name} (${t.type}) - ID: ${t.tagId}`).join('\n')}`
-                : `No tags matched "${nameQ}"`,
+              text: idsOnly
+                ? matches.map((t: any) => t.tagId).join('\n')
+                : (matches.length
+                  ? `Found ${matches.length} tag(s):\n${matches.map((t: any) => `- ${t.name} (${t.type}) - ID: ${t.tagId}`).join('\n')}`
+                  : `No tags matched \"${nameQ}\"`),
             },
           ],
         };
@@ -1326,14 +1507,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         await gtmManager.findContainer(gtmIdFind);
         const nameQ = String(args?.name || '').trim();
         if (!nameQ) throw new Error('name is required');
-        const matches = await gtmManager.findTriggersByName(nameQ);
+        const exact = Boolean(args?.exact);
+        const idsOnly = Boolean(args?.idsOnly);
+        let matches = await gtmManager.findTriggersByName(nameQ);
+        if (exact) matches = matches.filter((t: any) => String(t.name || '') === nameQ);
         return {
           content: [
             {
               type: 'text',
-              text: matches.length
-                ? `Found ${matches.length} trigger(s):\n${matches.map((t: any) => `- ${t.name} (${t.type}) - ID: ${t.triggerId}`).join('\n')}`
-                : `No triggers matched "${nameQ}"`,
+              text: idsOnly
+                ? matches.map((t: any) => t.triggerId).join('\n')
+                : (matches.length
+                  ? `Found ${matches.length} trigger(s):\n${matches.map((t: any) => `- ${t.name} (${t.type}) - ID: ${t.triggerId}`).join('\n')}`
+                  : `No triggers matched \"${nameQ}\"`),
             },
           ],
         };
@@ -1517,6 +1703,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
 
+      case 'gtm_update_ga4_event_tag': {
+        if (!args?.tagId) throw new Error('tagId is required');
+        const updated = await gtmManager.updateGa4EventTag(
+          args.tagId as string,
+          {
+            name: args.name as string | undefined,
+            configTagId: args.configTagId as string | undefined,
+            measurementId: args.measurementId as string | undefined,
+            eventName: args.eventName as string | undefined,
+            eventParameters: (args.eventParameters as Record<string, any>) || undefined,
+            triggerId: args.triggerId as string | undefined,
+            triggerType: args.trigger as string | undefined,
+            resolveVariables: Boolean(args?.resolveVariables),
+          }
+        );
+        return { content: [{ type: 'text', text: `GA4 Event updated!\nName: ${updated.name}\nID: ${updated.tagId}` }] };
+      }
+
+      case 'gtm_pause_tag': {
+        if (!args?.tagId) throw new Error('tagId is required');
+        const t = await gtmManager.pauseTag(args.tagId as string, true);
+        return { content: [{ type: 'text', text: `Tag paused: ${t.name} (${t.tagId})` }] };
+      }
+      case 'gtm_unpause_tag': {
+        if (!args?.tagId) throw new Error('tagId is required');
+        const t = await gtmManager.pauseTag(args.tagId as string, false);
+        return { content: [{ type: 'text', text: `Tag unpaused: ${t.name} (${t.tagId})` }] };
+      }
+
+      case 'gtm_list_versions': {
+        const gtmId = process.env.GTM_ID;
+        if (!gtmId) throw new Error('GTM_ID not provided and not set in environment');
+        await gtmManager.findContainer(gtmId);
+        const resp = await (gtmManager as any).tagManager.accounts.containers.versions.list({ parent: `accounts/${(gtmManager as any).accountId}/containers/${(gtmManager as any).containerId}` });
+        const versions = resp?.data?.containerVersion || resp?.data?.containerVersionHeader || resp?.data?.containerVersions || [];
+        const lines = (versions || []).map((v: any) => `- ${v.name || '(no name)'}  id=${v.containerVersionId || v.containerVersionId || 'n/a'}  notes=${v.notes || ''}  created=${v.path || ''}`);
+        return { content: [{ type: 'text', text: `Versions:\n${lines.join('\n')}` }] };
+      }
+
+      case 'gtm_create_custom_event_trigger': {
+        if (!args?.name || !args?.eventName) throw new Error('name and eventName are required');
+        const filter = Boolean(args.regex)
+          ? [{ type: 'matchRegex', parameter: [{ type: 'template', key: 'arg0', value: 'event' }, { type: 'template', key: 'arg1', value: String(args.eventName) }] }]
+          : [{ type: 'equals', parameter: [{ type: 'template', key: 'arg0', value: 'event' }, { type: 'template', key: 'arg1', value: String(args.eventName) }] }];
+        const trig = await gtmManager.createTrigger(args.name as string, 'customEvent', filter as any[]);
+        return { content: [{ type: 'text', text: `Custom Event trigger created!\nName: ${trig.name}\nID: ${trig.triggerId}` }] };
+      }
+
       case 'gtm_list_triggers':
         const triggerGtmId = (args?.gtmId as string) || process.env.GTM_ID;
         if (!triggerGtmId) throw new Error('GTM_ID not provided and not set in environment');
@@ -1527,7 +1761,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Found ${triggers.length} triggers:\n${triggers
-                .map((trigger: any) => `- ${trigger.name} (${trigger.type}) - ID: ${trigger.triggerId}`)
+                .map((trigger: any) => `- ${trigger.name} [${trigger.type}] - ID: ${trigger.triggerId}`)
                 .join('\n')}`,
             },
           ],
