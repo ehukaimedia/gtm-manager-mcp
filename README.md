@@ -211,6 +211,15 @@ Check that the server is running and env/tokens are available.
 
 **Returns:** Status summary with env flags and token path
 
+#### `gtm_health_plus`
+Detailed health and permissions summary.
+
+**Parameters:**
+- `format` (string, optional): `'json'` for JSON output
+
+**Returns:**
+- token scopes and expiry, active container/workspace, whether publish looks allowed, and missing scopes if any
+
 ### Authentication
 
 #### `gtm_auth`
@@ -258,6 +267,8 @@ List all tags in the current workspace.
 
 **Parameters:**
 - `gtmId` (string, optional): GTM container ID (uses env default if not provided)
+- `format` (string, optional): `'json'` for JSON output
+- `idsOnly` (boolean, optional): return IDs only
 
 **Example:**
 ```typescript
@@ -270,8 +281,8 @@ Find tags by name (case-insensitive substring).
 **Parameters:**
 - `name` (string, required): Name or substring to search for
 - `gtmId` (string, optional): GTM container ID
- - `exact` (boolean, optional): Exact match only
- - `idsOnly` (boolean, optional): Return IDs only
+- `exact` (boolean, optional): Exact match only
+- `idsOnly` (boolean, optional): Return IDs only
 
 **Example:**
 ```typescript
@@ -402,6 +413,8 @@ List all variables in the current workspace.
 
 **Parameters:**
 - `gtmId` (string, optional): GTM container ID
+- `format` (string, optional): `'json'` for JSON output
+- `idsOnly` (boolean, optional): return IDs only
 
 **Example:**
 ```typescript

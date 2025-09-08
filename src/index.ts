@@ -84,6 +84,19 @@ export class GTMManager {
     };
   }
 
+  getTokenMeta() {
+    try {
+      const raw = fs.readFileSync(this.tokenPath, 'utf-8');
+      const tok = JSON.parse(raw || '{}');
+      const scopesStr: string = tok.scope || tok.scopes || '';
+      const scopes = typeof scopesStr === 'string' ? scopesStr.split(/\s+/).filter(Boolean) : Array.isArray(scopesStr) ? scopesStr : [];
+      const expiryMs: number | undefined = tok.expiry_date || tok.expiry || undefined;
+      return { scopes, expiry: expiryMs ? new Date(expiryMs).toISOString() : null };
+    } catch {
+      return { scopes: [], expiry: null };
+    }
+  }
+
   private ensureAuth(): OAuth2Client {
     if (this.auth) return this.auth;
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -1036,6 +1049,8 @@ const TOOLS: Tool[] = [
           type: 'string',
           description: 'GTM container ID (optional, uses env default)',
         },
+        format: { type: 'string', description: "'json' for JSON output" },
+        idsOnly: { type: 'boolean', description: 'Return IDs only', default: false },
       },
     },
   },
@@ -1049,6 +1064,8 @@ const TOOLS: Tool[] = [
           type: 'string',
           description: 'GTM container ID (optional, uses env default)',
         },
+        format: { type: 'string', description: "'json' for JSON output" },
+        idsOnly: { type: 'boolean', description: 'Return IDs only', default: false },
       },
     },
   },
@@ -1316,8 +1333,34 @@ const TOOLS: Tool[] = [
           type: 'string',
           description: 'GTM container ID (optional, uses env default)',
         },
+        format: { type: 'string', description: "'json' for JSON output" },
+        idsOnly: { type: 'boolean', description: 'Return IDs only', default: false },
       },
     },
+  },
+  {
+    name: 'gtm_health_plus',
+    description: 'Detailed health: token scopes/expiry, container/workspace, publishability',
+    inputSchema: { type: 'object', properties: { format: { type: 'string', description: "'json' for JSON output" } } },
+  },
+  {
+    name: 'gtm_pause_tags_by_name',
+    description: 'Pause tags by name substring (supports exact + dryRun)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name or substring to match' },
+        exact: { type: 'boolean', description: 'Exact match' },
+        dryRun: { type: 'boolean', description: 'Do not modify, only list matches' },
+        gtmId: { type: 'string', description: 'Override GTM ID' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'gtm_unpause_tags_by_ids',
+    description: 'Unpause tags by IDs',
+    inputSchema: { type: 'object', properties: { ids: { type: 'array', description: 'Tag IDs', items: { type: 'string' } } }, required: ['ids'] },
   },
   {
     name: 'gtm_create_trigger',
@@ -1441,6 +1484,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!gtmId) throw new Error('GTM_ID not provided and not set in environment');
         await gtmManager.findContainer(gtmId);
         const tags = await gtmManager.listTags();
+        if (args?.format === 'json') {
+          const items = (tags || []).map((tag: any) => ({ id: tag.tagId, name: tag.name, type: tag.type, paused: !!tag.paused }));
+          return { content: [{ type: 'text', text: JSON.stringify({ count: items.length, items }, null, 2) }] };
+        }
+        if (args?.idsOnly) {
+          return { content: [{ type: 'text', text: (tags || []).map((t: any) => t.tagId).join('\n') }] };
+        }
         return {
           content: [
             {
@@ -1462,6 +1512,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!varGtmId) throw new Error('GTM_ID not provided and not set in environment');
         await gtmManager.findContainer(varGtmId);
         const variables = await gtmManager.listVariables();
+        if (args?.format === 'json') {
+          const items = (variables || []).map((v: any) => ({ id: v.variableId, name: v.name, type: v.type }));
+          return { content: [{ type: 'text', text: JSON.stringify({ count: items.length, items }, null, 2) }] };
+        }
+        if (args?.idsOnly) {
+          return { content: [{ type: 'text', text: (variables || []).map((v: any) => v.variableId).join('\n') }] };
+        }
         return {
           content: [
             {
@@ -1523,6 +1580,76 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+      }
+
+      case 'gtm_health_plus': {
+        const status = gtmManager.status();
+        const token = status.tokenExists ? gtmManager.getTokenMeta() : { scopes: [], expiry: null };
+        let containerPath = '';
+        let workspaceId: string | null = null;
+        let containerOk = false;
+        try {
+          const gtmIdEnv = process.env.GTM_ID;
+          if (gtmIdEnv) {
+            await gtmManager.findContainer(gtmIdEnv);
+            const workspaces = await (gtmManager as any).tagManager.accounts.containers.workspaces.list({ parent: `accounts/${(gtmManager as any).accountId}/containers/${(gtmManager as any).containerId}` });
+            workspaceId = workspaces?.data?.workspace?.[0]?.workspaceId || null;
+            containerPath = `accounts/${(gtmManager as any).accountId}/containers/${(gtmManager as any).containerId}`;
+            containerOk = true;
+          }
+        } catch {}
+        const requiredScopes = [
+          'https://www.googleapis.com/auth/tagmanager.readonly',
+          'https://www.googleapis.com/auth/tagmanager.edit.containers',
+          'https://www.googleapis.com/auth/tagmanager.edit.containerversions',
+          'https://www.googleapis.com/auth/tagmanager.publish',
+        ];
+        const missingScopes = requiredScopes.filter((s) => !(token.scopes || []).includes(s));
+        const publishable = missingScopes.length === 0 && containerOk;
+        const out = {
+          ok: status.env.GOOGLE_CLIENT_ID && status.env.GOOGLE_CLIENT_SECRET && status.env.GOOGLE_REDIRECT_URI,
+          tokenPresent: status.tokenExists,
+          scopes: token.scopes,
+          tokenExpiry: (token as any).expiry || null,
+          containerPath,
+          workspaceId,
+          publishable,
+          missingScopes,
+        };
+        if (args?.format === 'json') return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+        return { content: [{ type: 'text', text: `ok=${out.ok}\ntoken=${out.tokenPresent}\nscopes=${out.scopes.join(', ')}\nexpiry=${out.tokenExpiry || ''}\ncontainer=${out.containerPath || ''}\nworkspace=${out.workspaceId || ''}\npublishable=${out.publishable}\nmissingScopes=${out.missingScopes.join(', ')}` }] };
+      }
+
+      case 'gtm_pause_tags_by_name': {
+        const gtmIdFind2 = (args?.gtmId as string) || process.env.GTM_ID;
+        if (!gtmIdFind2) throw new Error('GTM_ID not provided and not set in environment');
+        await gtmManager.findContainer(gtmIdFind2);
+        const nameQ2 = String(args?.name || '').trim();
+        if (!nameQ2) throw new Error('name is required');
+        const exact2 = Boolean(args?.exact);
+        const dry2 = Boolean(args?.dryRun);
+        let matches2 = await gtmManager.findTagsByName(nameQ2);
+        if (exact2) matches2 = matches2.filter((t: any) => String(t.name || '') === nameQ2);
+        if (dry2) {
+          return { content: [{ type: 'text', text: matches2.map((t: any) => `${t.tagId}\t${t.name}`).join('\n') || '(no matches)' }] };
+        }
+        const results2: string[] = [];
+        for (const t of matches2 as any[]) {
+          const upd = await gtmManager.pauseTag(String(t.tagId), true);
+          results2.push(`${upd.tagId}\tpaused`);
+        }
+        return { content: [{ type: 'text', text: results2.join('\n') || '(no matches)' }] };
+      }
+
+      case 'gtm_unpause_tags_by_ids': {
+        const ids2 = Array.isArray(args?.ids) ? (args.ids as string[]) : [];
+        if (ids2.length === 0) throw new Error('ids array is required');
+        const out2: string[] = [];
+        for (const id of ids2) {
+          const upd = await gtmManager.pauseTag(String(id), false);
+          out2.push(`${upd.tagId}\tunpaused`);
+        }
+        return { content: [{ type: 'text', text: out2.join('\n') }] };
       }
 
       case 'gtm_create_tag':
@@ -1756,6 +1883,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!triggerGtmId) throw new Error('GTM_ID not provided and not set in environment');
         await gtmManager.findContainer(triggerGtmId);
         const triggers = await gtmManager.listTriggers();
+        if (args?.format === 'json') {
+          const items = (triggers || []).map((t: any) => ({ id: t.triggerId, name: t.name, type: t.type }));
+          return { content: [{ type: 'text', text: JSON.stringify({ count: items.length, items }, null, 2) }] };
+        }
+        if (args?.idsOnly) {
+          return { content: [{ type: 'text', text: (triggers || []).map((t: any) => t.triggerId).join('\n') }] };
+        }
         return {
           content: [
             {
