@@ -23,6 +23,10 @@ A Model Context Protocol (MCP) server that provides comprehensive Google Tag Man
 - Automatic trigger assignment
 - Pause/unpause tags
 
+### Validation & Publish
+- Validate workspace before publishing
+- Create/publish versions
+
 ### Variable Management
 - List all variables
 - Create Custom JavaScript variables
@@ -421,6 +425,20 @@ List all variables in the current workspace.
 await gtm_list_variables()
 ```
 
+#### `gtm_find_variables`
+Find variables by name.
+
+**Parameters:**
+- `name` (string, required)
+- `exact` (boolean, optional)
+- `idsOnly` (boolean, optional)
+- `gtmId` (string, optional)
+
+**Example:**
+```typescript
+await gtm_find_variables({ name: 'Page Path (JS)', exact: true })
+```
+
 #### `gtm_create_variable`
 Create a new Custom JavaScript variable.
 
@@ -435,6 +453,20 @@ await gtm_create_variable({
   name: "Page Title",
   code: "function() { return document.title; }"
 })
+```
+
+#### `gtm_create_dlv`
+Create a Data Layer Variable (DLV) without writing JS.
+
+**Parameters:**
+- `name` (string, required): Display name
+- `dlvName` (string, required): Data Layer key (e.g., `page.path`)
+- `dataLayerVersion` (number, optional): 1 or 2 (default 2)
+- `defaultValue` (string, optional): Fallback value
+
+**Example:**
+```typescript
+await gtm_create_dlv({ name: 'DLV Page Path', dlvName: 'page.path', dataLayerVersion: 2, defaultValue: '/' })
 ```
 
 #### `gtm_update_variable`
@@ -471,6 +503,8 @@ List all triggers in the current workspace.
 
 **Parameters:**
 - `gtmId` (string, optional): GTM container ID
+- `format` (string, optional): `'json'` for JSON output
+- `idsOnly` (boolean, optional): return IDs only
 
 **Example:**
 ```typescript
@@ -484,7 +518,7 @@ Find triggers by name (case-insensitive substring).
 - `name` (string, required): Name or substring to search for
 - `gtmId` (string, optional): GTM container ID
  - `exact` (boolean, optional): Exact match only
- - `idsOnly` (boolean, optional): Return IDs only
+- `idsOnly` (boolean, optional): Return IDs only
 
 **Example:**
 ```typescript
@@ -514,6 +548,27 @@ await gtm_create_trigger({
   }]
 })
 ```
+
+#### `gtm_create_custom_event_trigger`
+Create a Custom Event trigger (regex supported).
+
+**Parameters:**
+- `name` (string, required)
+- `eventName` (string, required)
+- `regex` (boolean, optional)
+
+**Example:**
+```typescript
+await gtm_create_custom_event_trigger({ name: 'Login Event', eventName: '^login$', regex: true })
+```
+
+### Versions & Validation
+
+#### `gtm_list_versions`
+List container versions with names/notes.
+
+#### `gtm_validate_workspace`
+Run pre‑publish checks (missing variables, trigger references, GA4 linkage). Returns issues array when failing.
 
 ## Error Handling
 
