@@ -910,13 +910,21 @@ export class GTMManager {
     const workspace = workspaces.data.workspace?.[0];
     if (!workspace) throw new Error('No workspace found');
 
+    const requestBody: any = {
+      name,
+      type,
+    };
+    if (conditions && conditions.length > 0) {
+      if (type === 'customEvent') {
+        requestBody.customEventFilter = conditions;
+      } else {
+        requestBody.filter = conditions;
+      }
+    }
+
     const trigger = await this.tagManager.accounts.containers.workspaces.triggers.create({
       parent: `accounts/${this.accountId}/containers/${this.containerId}/workspaces/${workspace.workspaceId}`,
-      requestBody: {
-        name,
-        type,
-        filter: conditions
-      }
+      requestBody
     });
 
     return trigger.data;
